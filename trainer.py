@@ -12,7 +12,7 @@ import tools
 from PerceNet import Vgg16
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
-train_epochs = 100
+train_epochs = 20
 
 INPUT_HEIGHT = 224
 INPUT_WIDTH = 224
@@ -20,25 +20,25 @@ INPUT_WIDTH = 224
 batch_size = 35
 
 
-checkpoint_path = './log/3.14/'
+checkpoint_path = './log/3.25/'
 
 
 if not os.path.isdir(checkpoint_path):
     os.mkdir(checkpoint_path)
 
 
-def total_variation_loss(inputs):
-    """
-    A smooth loss in fact. Like the smooth prior in MRF.
-    V(y) = || y_{n+1} - y_n ||_2
-    :param inputs:
-    :return:
-    """
-    dy = inputs[:, :-1, ...] - inputs[:, 1:, ...]
-    dx = inputs[:, :, :-1, ...] - inputs[:, :, 1:, ...]
-    size_dy = tf.size(dy, out_type=tf.float32)
-    size_dx = tf.size(dx, out_type=tf.float32)
-    return tf.nn.l2_loss(dy) / size_dy + tf.nn.l2_loss(dx) / size_dx
+# def total_variation_loss(inputs):
+#     """
+#     A smooth loss in fact. Like the smooth prior in MRF.
+#     V(y) = || y_{n+1} - y_n ||_2
+#     :param inputs:
+#     :return:
+#     """
+#     dy = inputs[:, :-1, ...] - inputs[:, 1:, ...]
+#     dx = inputs[:, :, :-1, ...] - inputs[:, :, 1:, ...]
+#     size_dy = tf.size(dy, out_type=tf.float32)
+#     size_dx = tf.size(dx, out_type=tf.float32)
+#     return tf.nn.l2_loss(dy) / size_dy + tf.nn.l2_loss(dx) / size_dx
 
 
 def get_train_batch(pointer):
@@ -102,8 +102,8 @@ def get_batches(pointer, temp):
 
 IMAGE_DATE_DIR = './clear1/'
 IMAGE_DATE_DIR1 = './OTS/'
-Val_Dir = './gt/'
-Val_Hazy_Dir = './hazy/'
+Val_Dir = './val_truth/'
+Val_Hazy_Dir = './val_hazy/'
 
 
 train_images = []
@@ -112,19 +112,18 @@ for image_filename in os.listdir(IMAGE_DATE_DIR):
         for _ in range(35):
             train_images.append(os.path.join(IMAGE_DATE_DIR, image_filename))
 
-# random.shuffle(train_images)
 
 test_images = []
 for image_filename in os.listdir(IMAGE_DATE_DIR1):
     if image_filename.endswith('.jpg'):
         test_images.append(os.path.join(IMAGE_DATE_DIR1, image_filename))
 
-# random.shuffle(test_images)
 
 val_images = []
 for image_filename in os.listdir(Val_Dir):
-    if image_filename.endswith('.png'):
+    if image_filename.endswith('.jpg'):
         val_images.append(os.path.join(Val_Dir, image_filename))
+
 
 val_hazy = []
 for image_filename in os.listdir(Val_Hazy_Dir):
@@ -142,12 +141,23 @@ print(np.shape(output))
 # vgg_per.build(output)
 # vgg_tru = Vgg16()
 # vgg_tru.build(input_raw)
-# output_per = vgg_per.conv3_3
-# output_tru = vgg_tru.conv3_3
+#
+# output_per_1 = vgg_per.conv3_3
+# output_tru_1 = vgg_tru.conv3_3
+#
+# output_per_2 = vgg_per.conv1_1
+# output_tru_2 = vgg_tru.conv1_1
+#
+# output_per_3 = vgg_per.conv2_2
+# output_tru_3 = vgg_tru.conv2_2
 
-# loss_tv
+
+# per_loss = (tf.reduce_mean(tf.square(tf.subtract(output_per_1, output_tru_1))) / 3136) + \
+#            (tf.reduce_mean(tf.square(tf.subtract(output_per_2, output_tru_2))) / 50176) + \
+#            (tf.reduce_mean(tf.square(tf.subtract(output_per_3, output_tru_3))) / 12544)
 
 loss = tf.reduce_mean(tf.square(tf.subtract(output, input_raw)))
+# loss_tv = total_variation_loss(output)
 
 optimizer = tf.train.AdamOptimizer(0.001).minimize(loss)
 
@@ -184,13 +194,12 @@ with tf.Session(config=config) as sess:
 
         for batch_index in range(total_batch):
             # start_time = time.time()
-            # batch_x = get_train_batch(batch_index)
-            # hazy_x = get_test_batch(batch_index)
 
             batch_x, hazy_x = get_batches(batch_index, temp_new)
 
             _, train_loss, pred_result = sess.run([optimizer, loss, output], feed_dict={input_x: hazy_x,
                                                                                         input_raw: batch_x})
+
             print('epoch: %04d\tbatch: %04d\ttrain loss: %.9f' % (epoch + 1, batch_index + 1, train_loss,))
 
             psnr_train = 0
@@ -198,7 +207,7 @@ with tf.Session(config=config) as sess:
                 array = np.reshape(pred_result[index], newshape=[INPUT_HEIGHT, INPUT_WIDTH, 3])
                 array = array * 255
                 arr1 = np.uint8(array)
-                image = Image.fromarray(arr1, 'RGB')
+                # image = Image.fromarray(arr1, 'RGB')
                 # if image.mode != 'L':
                 #     image = image.convert('L')
                 # image.save('./pred3_10//' + str(epoch) + '_' + str(batch_index) + '.jpg', 'jpeg')
@@ -208,7 +217,7 @@ with tf.Session(config=config) as sess:
                 array_raw = np.reshape(hazy_x[index], newshape=[INPUT_HEIGHT, INPUT_WIDTH, 3])
                 array_raw = array_raw * 255
                 arr2 = np.uint8(array_raw)
-                image_raw = Image.fromarray(arr2, 'RGB')
+                # image_raw = Image.fromarray(arr2, 'RGB')
                 # if image_raw.mode != 'L':
                 #     image_raw = image_raw.convert('L')
                 # image_raw.save('./pred3_10//' + str(epoch) + '_' + str(batch_index) + '_hazy.jpg', 'jpeg')
@@ -216,16 +225,16 @@ with tf.Session(config=config) as sess:
                 array_truth = np.reshape(batch_x[index], newshape=[INPUT_HEIGHT, INPUT_WIDTH, 3])
                 array_truth = array_truth * 255
                 arr3 = np.uint8(array_truth)
-                image_truth = Image.fromarray(arr3, 'RGB')
+                # image_truth = Image.fromarray(arr3, 'RGB')
                 # if image.mode != 'L':
                 #     image = image.convert('L')
                 # image_truth.save('./pred3_10//' + str(epoch) + '_' + str(batch_index) + '_truth.jpg', 'jpeg')
 
                 psnr_train_per = tools.cal_psnr(arr1, arr3)
                 psnr_train += psnr_train_per
+
             psnr_train_avg = psnr_train / 35
             print('psnr train: %.6f' % psnr_train_avg)
-
 
                 # duration = time.time() - start_time
                 # print(duration)
@@ -235,40 +244,43 @@ with tf.Session(config=config) as sess:
         checkpoint_name = os.path.join(checkpoint_path, 'model_epoch' + str(epoch + 1) + '.ckpt')
         saver.save(sess, checkpoint_name)
 
-        total_batch_val = int(490 / 35)
+        total_batch_val = int(50 / 35)
         psnr_all = 0
+
+        full_path = tf.train.latest_checkpoint(checkpoint_path)
+        saver.restore(sess, full_path)
+
         for i in range(total_batch_val):
 
             val_y = get_train_batch(i)
             hazy_y = get_test_batch(i)
 
+            val_result = sess.run(output, feed_dict={input_x: hazy_y})
+
             for j in range(35):
-
-                full_path = tf.train.latest_checkpoint(checkpoint_path)
-                saver.restore(sess, full_path)
-
-                val_loss, val_result = sess.run([loss, output], feed_dict={input_x: hazy_y,
-                                                                           input_raw: val_y})
 
                 array = np.reshape(val_result[j], newshape=[INPUT_HEIGHT, INPUT_WIDTH, 3])
                 array = array * 255
-                arr1 = np.uint8(array)
-                # image = Image.fromarray(arr1, 'RGB')
+                array = tf.saturate_cast(array, dtype=tf.uint8)
+                arr1 = sess.run(array)
+                image = Image.fromarray(arr1, 'RGB')
                 # if image.mode != 'L':
                 #     image = image.convert('L')
-                # image.save('./pred3_12_val//' + str(epoch) + '_' + str(i) + '_' + str(j) + '.jpg', 'jpeg')
+                image.save('./pred3_25_test/' + str(epoch + 1) + '_' + str(i) + '_' + str(j) + '.jpg', 'jpeg')
 
                 array_truth = np.reshape(val_y[j], newshape=[INPUT_HEIGHT, INPUT_WIDTH, 3])
                 array_truth = array_truth * 255
-                arr3 = np.uint8(array_truth)
-                # image_truth = Image.fromarray(arr3, 'RGB')
+                array_truth = tf.saturate_cast(array_truth, dtype=tf.uint8)
+                arr3 = sess.run(array_truth)
+                image_truth = Image.fromarray(arr3, 'RGB')
                 # if image.mode != 'L':
                 #     image = image.convert('L')
-                # image_truth.save('./pred3_12_val//' + str(epoch) + '_' + str(i) + '_' + str(j) + '_truth.jpg', 'jpeg')
+                image_truth.save('./pred3_25_test/' + str(epoch + 1) + '_' + str(i) + '_' + str(j) + '_truth.jpg', 'jpeg')
 
                 psnr_val = tools.cal_psnr(arr1, arr3)
                 print('epoch: %04d\tper psnr: %.9f' % (epoch + 1, psnr_val))
                 psnr_all += psnr_val
-        psnr_avg = psnr_all / 490
+
+        psnr_avg = psnr_all / 35
         print('psnr val: %.6f' % psnr_avg)
         print('End val')
